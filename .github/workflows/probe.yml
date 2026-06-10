@@ -1,0 +1,76 @@
+name: probe
+
+# External prober (FASE 2). Runs off-NAS so a NAS outage is still detected.
+# ~ every 5 minutes + manual trigger.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+# Avoid overlapping runs (a slow probe + the next scheduled tick).
+concurrency:
+  group: probe
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # needed to force-push status.json to the status-data branch
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code (main)
+        uses: actions/checkout@v4
+
+      - name: Fetch previous status data
+        run: |
+          mkdir -p _data
+          # Pull the existing status.json from the status-data branch (if it exists)
+          # so the prober can read previous state (debounce + uptime history).
+          if git fetch origin status-data --depth=1 2>/dev/null; then
+            git show origin/status-data:status.json > _data/status.json 2>/dev/null || true
+          fi
+          if [ -f _data/status.json ]; then
+            echo "previous status loaded ($(wc -c < _data/status.json) bytes)"
+          else
+            echo "no previous status (first run)"
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run probe
+        env:
+          STATUS_DATA_PATH: _data/status.json
+          STATUS_OUT_PATH: status.json
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_EMAIL_TO: ${{ vars.ALERT_EMAIL_TO }}
+          ALERT_EMAIL_FROM: ${{ vars.ALERT_EMAIL_FROM }}
+          STATUS_PUBLIC_URL: https://status.kattenberg118.be
+        run: node probe.mjs
+
+      - name: Publish status.json to status-data branch
+        env:
+          # Pass trusted context through env (safe-pattern: no direct ${{ }} in run shell).
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          git config user.name "kattenberg118-status-bot"
+          git config user.email "status-bot@users.noreply.github.com"
+
+          # Build a fresh single-commit branch each run => low-noise history
+          # (one commit, force-pushed) instead of 288 commits/day.
+          mkdir -p _publish
+          cp status.json _publish/status.json
+
+          cd _publish
+          git init -q
+          git checkout -q -b status-data
+          git add status.json
+          git commit -q -m "status: $(date -u +%FT%TZ)" \
+            -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" status-data
+          echo "published status.json to status-data branch"

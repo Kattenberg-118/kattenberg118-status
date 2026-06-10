@@ -1,0 +1,8 @@
+# Runtime-only — status.json lives on the `status-data` branch, never on main.
+status.json
+_data/
+_publish/
+node_modules/
+.DS_Store
+status-mixed.json
+.claude/
