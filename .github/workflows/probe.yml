@@ -58,9 +58,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          git config user.name "kattenberg118-status-bot"
-          git config user.email "status-bot@users.noreply.github.com"
-
           # Build a fresh single-commit branch each run => low-noise history
           # (one commit, force-pushed) instead of 288 commits/day.
           mkdir -p _publish
@@ -68,6 +65,9 @@ jobs:
 
           cd _publish
           git init -q
+          # Identity must be set INSIDE this fresh repo (the runner has no global one).
+          git config user.name "kattenberg118-status-bot"
+          git config user.email "status-bot@users.noreply.github.com"
           git checkout -q -b status-data
           git add status.json
           git commit -q -m "status: $(date -u +%FT%TZ)" \
