@@ -26,7 +26,8 @@ import { dirname } from "node:path";
 const SERVICES = [
   { id: "dkwb",    name: "De Kleine Wereldburger", url: "https://dekleinewereldburger.be" },
   { id: "www",     name: "Kattenberg 118",          url: "https://www.kattenberg118.be" },
-  { id: "studio",  name: "Studio",                  url: "https://studio.kattenberg118.be" },
+  // /healthz: lichte gezondheidscheck van de studio (vervangt de healthcheck-workflow in k118-studio).
+  { id: "studio",  name: "Studio",                  url: "https://studio.kattenberg118.be/healthz" },
   { id: "umami",   name: "Analytics (Umami)",       url: "https://umami.kattenberg118.be" },
 ];
 
@@ -71,10 +72,11 @@ async function checkOnce(url) {
       signal: controller.signal,
       headers: { "user-agent": "kattenberg118-status-probe/1.0 (+https://status.kattenberg118.be)" },
     });
+    // Alleen 2xx telt als gezond (na het volgen van redirects).
     // drain body so the connection closes cleanly and latency reflects full TTFB+
     await res.arrayBuffer().catch(() => {});
     const latency = Date.now() - started;
-    return { ok: res.status >= 200 && res.status < 400, http_code: res.status, latency_ms: latency };
+    return { ok: res.status >= 200 && res.status < 300, http_code: res.status, latency_ms: latency };
   } catch (err) {
     const latency = Date.now() - started;
     return { ok: false, http_code: 0, latency_ms: latency, error: err.name || "error" };
